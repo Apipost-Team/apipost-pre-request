@@ -1,4 +1,4 @@
-const  apipostRequest = require('apipost-send'),
+const apipostRequest = require("apipost-send"),
   sm2 = require("sm-crypto").sm2, // add module for 7.0.8
   sm3 = require("sm-crypto").sm3, // add module for 7.0.8
   sm4 = require("sm-crypto").sm4, // add module for 7.0.8
@@ -23,7 +23,15 @@ const  apipostRequest = require('apipost-send'),
   JSONbig = require("json-bigint"),
   aTools = require("apipost-tools"),
   validCookie = require("check-valid-cookie"),
-  urlJoin = require("url-join"); // + new add 必须 4.0.1版本
+  urlJoin = require("url-join"), // + new add 必须 4.0.1版本
+  qs = require("querystring"),
+  UrlParse = require("url-parse"),
+  Base64 = require("js-base64"),
+  EdgeGridAuth = require("akamai-edgegrid/src/auth"),
+  ntlm = require("httpntlm").ntlm,
+  OAuth = require("oauth-1.0a"),
+  crypto = require("crypto"),
+  ATools = require("apipost-tools");
 
 function ApipostPreRequest(emitRuntimeEvent) {
   // 当前流程总错误计数器
@@ -32,7 +40,7 @@ function ApipostPreRequest(emitRuntimeEvent) {
     RUNNER_STOP = {};
 
   if (typeof emitRuntimeEvent !== "function") {
-    emitRuntimeEvent = function () { };
+    emitRuntimeEvent = function () {};
   }
 
   // Apipost 沙盒
@@ -487,7 +495,7 @@ function ApipostPreRequest(emitRuntimeEvent) {
 
                   try {
                     json = JSON5.parse(scope.response.data[key].rawBody);
-                  } catch (e) { }
+                  } catch (e) {}
 
                   Object.defineProperty(scope.response.data[key], "json", {
                     configurable: true,
@@ -774,10 +782,10 @@ function ApipostPreRequest(emitRuntimeEvent) {
               request: pm.request ? _.cloneDeep(pm.request) : {},
               response: pm.response
                 ? _.assign(pm.response, {
-                  json: _.isFunction(pm.response.json)
-                    ? pm.response.json()
-                    : pm.response.json,
-                })
+                    json: _.isFunction(pm.response.json)
+                      ? pm.response.json()
+                      : pm.response.json,
+                  })
                 : {},
               expect: chai.expect,
               sleep(ms) {
@@ -836,13 +844,12 @@ function ApipostPreRequest(emitRuntimeEvent) {
 
   // 参数初始化
   function runInit() {
-   // RUNNER_ERROR_COUNT = 0;
+    // RUNNER_ERROR_COUNT = 0;
     // RUNNER_TOTAL_COUNT = 0
-   // startTime = dayjs().format("YYYY-MM-DD HH:mm:ss"); // 开始时间
-   // startTimeStamp = Date.now(); // 开始时间戳
+    // startTime = dayjs().format("YYYY-MM-DD HH:mm:ss"); // 开始时间
+    // startTimeStamp = Date.now(); // 开始时间戳
     RUNNER_RESULT_LOG = {};
   }
-
   // start run
   async function run(definitions, option = {}, initFlag = 0, loopCount = 0) {
     // console.log(mySandbox.variablesScope)
@@ -963,7 +970,7 @@ function ApipostPreRequest(emitRuntimeEvent) {
       typeof requester === "object" && requester.AUTO_CONVERT_FIELD_2_MOCK > 0;
 
     // 发送对象
-     const request = new apipostRequest(_.isObject(requester) ? requester : {});
+    const request = new apipostRequest(_.isObject(requester) ? requester : {});
 
     // 全局断言
     const _global_asserts = _.find(
@@ -1376,8 +1383,8 @@ function ApipostPreRequest(emitRuntimeEvent) {
               contentType: _script_request_headers["content-type"]
                 ? _script_request_headers["content-type"]
                 : _script_header_map[_script_mode]
-                  ? _script_header_map[_script_mode]
-                  : "",
+                ? _script_header_map[_script_mode]
+                : "",
               request_headers: _script_request_headers,
               request_querys: _script_querys,
               request_bodys: _script_bodys,
@@ -1411,7 +1418,7 @@ function ApipostPreRequest(emitRuntimeEvent) {
                 _requestPara.pre_script,
                 definition,
                 "pre_script",
-                (err, res) => { }
+                (err, res) => {}
               );
             }
 
@@ -1765,8 +1772,9 @@ function ApipostPreRequest(emitRuntimeEvent) {
                       _targetHeaderCookie &&
                       _targetHeaderCookie.is_checked > 0
                     ) {
-                      _targetHeaderCookie.value = `${_cookieArr.join(";")};${_targetHeaderCookie.value
-                        }`; // fix bug for 7.0.8
+                      _targetHeaderCookie.value = `${_cookieArr.join(";")};${
+                        _targetHeaderCookie.value
+                      }`; // fix bug for 7.0.8
                     } else {
                       _request.request.header.parameter.push({
                         key: "cookie",
@@ -1815,7 +1823,6 @@ function ApipostPreRequest(emitRuntimeEvent) {
             }
 
             return _request;
-         
           }
         }
       }
@@ -1823,9 +1830,413 @@ function ApipostPreRequest(emitRuntimeEvent) {
   }
 
   // 构造一个执行对象
-  Object.defineProperty(this, "run", {
-    value: run,
+  Object.defineProperties(this, {
+    run: {
+      value: run,
+    },
   });
 }
 
-module.exports = ApipostPreRequest;
+// 格式化 query 参数
+function formatQueries(arr) {
+  let queries = "";
+
+  if (arr instanceof Array) {
+    arr.forEach(function (item) {
+      // fixed bug
+      if (parseInt(item.is_checked) === 1) {
+        item.value;
+        if (item.value === "") {
+          queries += `${item.key}&`;
+        } else {
+          queries += `${item.key}=${item.value}&`;
+        }
+      }
+    });
+  }
+
+  return qs.parse(_.trimEnd(queries, "&"));
+}
+
+// 格式化 urlencode 参数
+function formatUrlencodeBodys(arr) {
+  let bodys = "";
+
+  if (arr instanceof Array) {
+    arr.forEach(function (item) {
+      if (parseInt(item.is_checked) === 1) {
+        if (item.key !== "") {
+          bodys +=
+            encodeURIComponent(item.key) +
+            "=" +
+            encodeURIComponent(item.value) +
+            "&"; // fix bug for 7.0.8
+          // bodys += item.key + '=' + item.value + '&';
+        }
+      }
+    });
+  }
+
+  bodys = bodys.substr(-1) == "&" ? bodys.substr(0, bodys.length - 1) : bodys;
+  return bodys;
+}
+
+// 格式化 请求Body 参数
+function formatRequestBodys(target) {
+  let _body = {};
+
+  switch (target.request.body.mode) {
+    case "none":
+      break;
+    case "form-data":
+      break;
+    case "urlencoded":
+      _body = {
+        form: formatUrlencodeBodys(target.request.body.parameter),
+      };
+      break;
+    case "json":
+      _body = {
+        body: formatRawJsonBodys(target.request.body.raw),
+      };
+      break;
+    default:
+      _body = {
+        body: formatRawBodys(target.request.body.raw),
+      };
+      break;
+  }
+
+  return _body;
+}
+
+// 格式化 json 参数
+function formatRawJsonBodys(raw = "") {
+  let bodys = "";
+
+  if (ATools.isJson5(raw)) {
+    try {
+      bodys = JSONbig.stringify(JSONbig.parse(stripJsonComments(raw)));
+    } catch (e) {
+      bodys = JSON.stringify(JSON5.parse(raw));
+    }
+  } else {
+    bodys = raw;
+  }
+
+  return bodys;
+}
+
+function setQueryString(uri, paras) {
+  let urls = new UrlParse(uri);
+  let fullPath = urls.href.substr(urls.origin.length);
+  let host = urls["host"];
+  let baseUri = uri.substr(0, uri.indexOf(urls.query));
+
+  if (urls.query !== "") {
+    let queries = qs.parse(urls.query.substr(1));
+
+    fullPath =
+      urls["pathname"] + "?" + qs.stringify(Object.assign(queries, paras));
+    uri = baseUri + "?" + qs.stringify(Object.assign(queries, paras));
+  } else {
+    fullPath += "?" + qs.stringify(paras);
+    uri += "?" + qs.stringify(paras);
+  }
+
+  return { uri, host, fullPath, baseUri };
+}
+
+// 认证拼接为header
+function createAuthHeaders(target) {
+  let headers = {};
+  let auth = target.request.auth;
+  let { uri, host, fullPath, baseUri } = setQueryString(
+    target.request.url,
+    formatQueries(target.request.query.parameter)
+  );
+  let entityBody = "";
+  let rbody = formatRequestBodys(target);
+
+  if (target.request.body.mode == "urlencoded") {
+    entityBody = rbody["form"];
+  } else if (target.request.body.mode != "form-data") {
+    entityBody = rbody["body"];
+  }
+
+  try {
+    // fixed 修复可能因第三方包报错导致的 bug
+    switch (auth.type) {
+      case "noauth":
+        break;
+      case "kv":
+        if (_.trim(auth.kv.key) != "") {
+          headers[_.trim(auth.kv.key)] = auth.kv.value;
+        }
+        break;
+      case "bearer":
+        if (_.trim(auth.bearer.key) != "") {
+          headers["Authorization"] = "Bearer " + _.trim(auth.bearer.key);
+        }
+        break;
+      case "basic":
+        headers["Authorization"] =
+          "Basic " +
+          Base64.encode(auth.basic.username + ":" + auth.basic.password);
+        break;
+      case "digest":
+        let ha1 = "";
+        let ha2 = "";
+        let response = "";
+        let hashFunc = CryptoJS.MD5;
+
+        if (
+          auth.digest.algorithm == "MD5" ||
+          auth.digest.algorithm == "MD5-sess"
+        ) {
+          hashFunc = CryptoJS.MD5;
+        } else if (
+          auth.digest.algorithm == "SHA-256" ||
+          auth.digest.algorithm == "SHA-256-sess"
+        ) {
+          hashFunc = CryptoJS.SHA256;
+        } else if (
+          auth.digest.algorithm == "SHA-512" ||
+          auth.digest.algorithm == "SHA-512-sess"
+        ) {
+          hashFunc = CryptoJS.SHA512;
+        }
+
+        let cnonce = auth.digest.cnonce == "" ? "apipost" : auth.digest.cnonce;
+
+        if (auth.digest.algorithm.substr(-5) == "-sess") {
+          ha1 = hashFunc(
+            hashFunc(
+              auth.digest.username +
+                ":" +
+                auth.digest.realm +
+                ":" +
+                auth.digest.password
+            ).toString() +
+              ":" +
+              auth.digest.nonce +
+              ":" +
+              cnonce
+          ).toString();
+        } else {
+          ha1 = hashFunc(
+            auth.digest.username +
+              ":" +
+              auth.digest.realm +
+              ":" +
+              auth.digest.password
+          ).toString();
+        }
+
+        if (auth.digest.qop != "auth-int") {
+          ha2 = hashFunc(target.method + ":" + fullPath).toString();
+        } else if (auth.digest.qop == "auth-int") {
+          ha2 = hashFunc(
+            target.method +
+              ":" +
+              fullPath +
+              ":" +
+              hashFunc(entityBody).toString()
+          ).toString();
+        }
+
+        if (auth.digest.qop == "auth" || auth.digest.qop == "auth-int") {
+          response = hashFunc(
+            ha1 +
+              ":" +
+              auth.digest.nonce +
+              ":" +
+              (auth.digest.nc || "00000001") +
+              ":" +
+              cnonce +
+              ":" +
+              auth.digest.qop +
+              ":" +
+              ha2
+          ).toString();
+        } else {
+          response = hashFunc(
+            ha1 + ":" + auth.digest.nonce + ":" + ha2
+          ).toString();
+        }
+
+        headers["Authorization"] =
+          'Digest username="' +
+          auth.digest.username +
+          '", realm="' +
+          auth.digest.realm +
+          '", nonce="' +
+          auth.digest.nonce +
+          '", uri="' +
+          fullPath +
+          '", algorithm="' +
+          auth.digest.algorithm +
+          '", qop=' +
+          auth.digest.qop +
+          ",nc=" +
+          (auth.digest.nc || "00000001") +
+          ', cnonce="' +
+          cnonce +
+          '", response="' +
+          response +
+          '", opaque="' +
+          auth.digest.opaque +
+          '"';
+        break;
+      case "hawk":
+        let options = {
+          ext: auth.hawk.extraData,
+          timestamp: auth.hawk.timestamp,
+          nonce: auth.hawk.nonce,
+          // payload: '{"some":"payload"}',                      // UTF-8 encoded string for body hash generation (ignored if hash provided)
+          // contentType: 'application/json',                    // Payload content-type (ignored if hash provided)
+          // hash: false,
+          app: auth.hawk.app,
+          dlg: auth.hawk.delegation,
+        };
+
+        if (auth.hawk.algorithm === "") {
+          auth.hawk.algorithm = "sha256";
+        }
+
+        if (auth.hawk.authId !== "" && auth.hawk.authKey !== "") {
+          // fix bug
+          let { header } = Hawk.client.header(uri, target.method, {
+            credentials: {
+              id: auth.hawk.authId,
+              key: auth.hawk.authKey,
+              algorithm: auth.hawk.algorithm,
+            },
+            ...options,
+          });
+          headers["Authorization"] = header;
+        }
+        break;
+      case "awsv4":
+        let awsauth = aws4.sign(
+          {
+            method: target.method,
+            host: host,
+            path: fullPath,
+            service: auth.awsv4.service,
+            region: auth.awsv4.region,
+            body: entityBody,
+          },
+          {
+            accessKeyId: auth.awsv4.accessKey,
+            secretAccessKey: auth.awsv4.secretKey,
+            sessionToken: auth.awsv4.sessionToken,
+          }
+        );
+
+        Object.assign(headers, awsauth.headers);
+        break;
+      case "edgegrid":
+        let eg = EdgeGridAuth.generateAuth(
+          {
+            path: uri,
+            method: target.method,
+            headers: {},
+            body: entityBody,
+          },
+          auth.edgegrid.clientToken,
+          auth.edgegrid.clientSecret,
+          auth.edgegrid.accessToken,
+          auth.edgegrid.baseUri,
+          0,
+          auth.edgegrid.nonce,
+          auth.edgegrid.timestamp
+        );
+
+        Object.assign(headers, eg.headers);
+        break;
+      case "ntlm": // https://github.com/SamDecrock/node-http-ntlm
+        Object.assign(headers, {
+          Connection: "keep-alive",
+          Authorization: ntlm.createType1Message({
+            url: uri,
+            username: auth.ntlm.username,
+            password: auth.ntlm.password,
+            workstation: auth.ntlm.workstation,
+            domain: auth.ntlm.domain,
+          }),
+        });
+        break;
+
+      case "ntlm_close":
+        Object.assign(headers, {
+          Connection: "close",
+          Authorization: ntlm.createType3Message(auth.ntlm_close.type2msg, {
+            url: uri,
+            username: auth.ntlm.username,
+            password: auth.ntlm.password,
+            workstation: auth.ntlm.workstation,
+            domain: auth.ntlm.domain,
+          }),
+        });
+        break;
+      case "oauth1":
+        let hmac = "sha1";
+
+        if (auth.oauth1.signatureMethod === "HMAC-SHA1") {
+          hmac = "sha1";
+        } else if (auth.oauth1.signatureMethod === "HMAC-SHA256") {
+          hmac = "sha256";
+        } else if (auth.oauth1.signatureMethod === "HMAC-SHA512") {
+          hmac = "sha512";
+        } else {
+          // todo..
+          // 支持更多加密方式
+        }
+        const oauth = OAuth({
+          consumer: {
+            key: auth.oauth1.consumerKey,
+            secret: auth.oauth1.consumerSecret,
+            version: auth.oauth1.version ?? "1.0",
+            nonce: auth.oauth1.nonce,
+            realm: auth.oauth1.realm,
+            timestamp: auth.oauth1.timestamp,
+            includeBodyHash: auth.oauth1.includeBodyHash,
+          },
+          signature_method: auth.oauth1.signatureMethod,
+          hash_function(base_string, key) {
+            let hash = crypto
+              .createHmac(hmac, key)
+              .update(base_string)
+              .digest("base64");
+            return hash;
+          },
+        });
+
+        const request_data = {
+          url: uri,
+          method: target.method,
+          data: auth.oauth1.includeBodyHash ? entityBody : {},
+          oauth_callback: auth.oauth1.callback,
+        };
+
+        // console.log(request_data)
+        const token = {
+          key: auth.oauth1.token,
+          secret: auth.oauth1.tokenSecret,
+        };
+
+        Object.assign(
+          headers,
+          oauth.toHeader(oauth.authorize(request_data, token))
+        );
+        break;
+    }
+  } catch (e) {
+    console.log(e, "error");
+  }
+
+  return headers;
+}
+
+module.exports = { ApipostPreRequest, createAuthHeaders };
