@@ -1,6 +1,6 @@
 {
   "name": "apipost-pre-request",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "this module is used  to prepare set  request for apipost",
   "main": "dist/index.js",
   "scripts": {
