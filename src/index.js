@@ -2239,4 +2239,16 @@ function createAuthHeaders(target) {
   return headers;
 }
 
+// 格式化 其他 非json raw参数
+function formatRawBodys(raw = '') {
+    let bodys = raw;
+
+    // if(ATools.isJson5(raw)){
+    //     bodys = JSON.stringify(JSON5.parse(raw));
+    // }else{
+    //     bodys = raw;
+    // }
+
+    return bodys;
+}
 module.exports = { ApipostPreRequest, createAuthHeaders };
